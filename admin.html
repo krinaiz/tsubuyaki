@@ -51,4 +51,113 @@
   <label>つぶやき本文</label>
   <textarea id="text" placeholder="最初のつぶやき！"></textarea>
 
-  <div class="row"
+  <div class="row">
+    <div>
+      <label><input id="autoTime" type="checkbox" checked> 投稿日時を自動付与（JST）</label>
+    </div>
+    <div>
+      <label class="mini muted">※ 手動で入れる場合は ISO 形式（例: 2025-09-16T12:34:00+09:00）</label>
+      <input id="manualTime" type="text" placeholder="空欄でOK">
+    </div>
+  </div>
+
+  <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" id="makePreview">プレビューを作る</button>
+    <button class="btn outline" id="copyJson" disabled>JSONをコピー</button>
+    <button class="btn outline" id="openEdit" disabled>GitHub編集を開く</button>
+  </div>
+</div>
+
+<div class="card">
+  <label>更新後の <code>notes.json</code> プレビュー</label>
+  <pre id="preview"><code class="muted">まだ作成していません。</code></pre>
+</div>
+
+<div class="card mini muted">
+  <details>
+    <summary>このツールについて</summary>
+    <p>・<code>raw.githubusercontent.com</code> から既存JSONを取得して1件追加します。</p>
+    <p>・完成JSONはクリップボードへコピー→GitHubの編集画面に貼り付けてCommit（トークン不要）。</p>
+    <p>・必要ならPCに保存してローカルで使ってください。</p>
+  </details>
+</div>
+
+<script>
+const $ = sel => document.querySelector(sel);
+const ghUser = $('#ghUser'), ghRepo = $('#ghRepo'), jsonName = $('#jsonName');
+const textEl = $('#text'), autoTime = $('#autoTime'), manualTime = $('#manualTime');
+const limitEl = $('#limit');
+const btnMake = $('#makePreview'), btnCopy = $('#copyJson'), btnEdit = $('#openEdit');
+const preview = $('#preview');
+
+function nowISOJST(){
+  const z = new Date();
+  const tzOffsetMin = -9*60; // JST(+09:00)
+  const local = new Date(z.getTime() + (tzOffsetMin - z.getTimezoneOffset())*60000);
+  const pad = n => String(n).padStart(2,'0');
+  const iso = local.getFullYear()+'-'+pad(local.getMonth()+1)+'-'+pad(local.getDate())
+    +'T'+pad(local.getHours())+':'+pad(local.getMinutes())+':'+pad(local.getSeconds())+'+09:00';
+  return iso;
+}
+
+function fmtJSON(obj){ return JSON.stringify(obj, null, 2); }
+
+async function fetchCurrentJSON(user, repo, name){
+  const url = `https://raw.githubusercontent.com/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/main/${encodeURIComponent(name)}?t=${Date.now()}`;
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw new Error('現在のJSONを取得できませんでした: HTTP '+r.status);
+  return r.json();
+}
+
+function validate(){
+  if(!ghUser.value.trim()) throw new Error('GitHubユーザー名を入力してください');
+  if(!ghRepo.value.trim()) throw new Error('リポジトリ名を入力してください');
+  if(!jsonName.value.trim()) throw new Error('JSONファイル名を入力してください');
+  if(!textEl.value.trim()) throw new Error('つぶやき本文を入力してください');
+}
+
+btnMake.addEventListener('click', async ()=>{
+  try{
+    validate();
+    btnMake.disabled = true; btnMake.textContent = '処理中…';
+    const base = await fetchCurrentJSON(ghUser.value.trim(), ghRepo.value.trim(), jsonName.value.trim());
+    if(!Array.isArray(base)) throw new Error('JSONの形式が配列ではありません');
+
+    const item = { text: String(textEl.value).trim() };
+    const tManual = manualTime.value.trim();
+    if(autoTime.checked || tManual){ item.time = tManual || nowISOJST(); }
+
+    const updated = [item, ...base];
+    updated.sort((a,b)=>{
+      const ta = a.time ? Date.parse(a.time) : -Infinity;
+      const tb = b.time ? Date.parse(b.time) : -Infinity;
+      return (isNaN(tb)?-Infinity:tb) - (isNaN(ta)?-Infinity:ta);
+    });
+
+    preview.textContent = fmtJSON(updated);
+    btnCopy.disabled = false; btnEdit.disabled = false;
+    btnMake.textContent = 'プレビューを作る';
+  }catch(err){
+    preview.textContent = 'エラー: ' + err.message;
+  }finally{
+    btnMake.disabled = false;
+  }
+});
+
+btnCopy.addEventListener('click', async ()=>{
+  try{
+    await navigator.clipboard.writeText(preview.textContent);
+    btnCopy.textContent = 'コピーしました！';
+    setTimeout(()=>btnCopy.textContent='JSONをコピー', 1500);
+  }catch{
+    btnCopy.textContent = 'コピー失敗…';
+    setTimeout(()=>btnCopy.textContent='JSONをコピー', 1500);
+  }
+});
+
+btnEdit.addEventListener('click', ()=>{
+  const user = ghUser.value.trim(), repo = ghRepo.value.trim(), name = jsonName.value.trim();
+  const url = `https://github.com/${encodeURIComponent(user)}/${encodeURIComponent(repo)}/edit/main/${encodeURIComponent(name)}`;
+  window.open(url, '_blank', 'noopener');
+});
+</script>
