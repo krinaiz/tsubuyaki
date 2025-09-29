@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>つぶやきアーカイブ</title>
+<style>
+  body{font:14px/1.6 system-ui,sans-serif;margin:0 auto;max-width:720px;padding:16px;background:#f8f9fb}
+  h1{font-size:20px;margin:0 0 12px}
+  .item{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin:8px 0}
+  .time{opacity:.6;font-size:12px}
+  .pin{margin-right:6px}
+  nav{display:flex;gap:8px;justify-content:center;margin:12px 0}
+  a.btn,button.btn{padding:6px 10px;border-radius:8px;border:1px solid #0f172a;background:#0f172a;color:#fff;text-decoration:none}
+  .muted{opacity:.7}
+</style>
+<h1>つぶやきアーカイブ</h1>
+<div id="list">読み込み中…</div>
+<nav id="pager" hidden>
+  <button id="prev" class="btn">前へ</button>
+  <span id="info" class="muted"></span>
+  <button id="next" class="btn">次へ</button>
+</nav>
+<script>
+(function(){
+  var DATA_URL = "https://krinaiz.github.io/tsubuyaki/notes.json";
+  var PAGE_SIZE = 10;
+  var state = { page: 1, items: [] };
+
+  function linkify(s){ return s.replace(/(https?:\/\/[^\s]+)/g,'<a target="_blank" rel="noopener" href="$1">$1</a>'); }
+  function relative(t){ try{var d=new Date(t); if(isNaN(d))return""; var s=(Date.now()-d)/1000; if(s<60)return"たった今"; if(s<3600)return Math.floor(s/60)+"分前"; if(s<86400)return Math.floor(s/3600)+"時間前"; return Math.floor(s/86400)+"日前";}catch(e){return"";} }
+  function timeVal(it){ var v=it&&it.time?Date.parse(it.time):0; return isNaN(v)?0:v; }
+  function fetchJSON(){
+    return fetch(DATA_URL+'?t='+Date.now(),{cache:'no-store'}).then(function(r){ if(!r.ok) throw 0; return r.json(); });
+  }
+  function render(){
+    var list = document.getElementById('list');
+    list.innerHTML = '';
+    if(!Array.isArray(state.items) || !state.items.length){ list.textContent='（データがありません）'; return; }
+
+    // ピンを先頭に揃え、残りは新しい順
+    var pinned = state.items.filter(function(x){return !!x.pin;}).sort(function(a,b){return timeVal(b)-timeVal(a);});
+    var others = state.items.filter(function(x){return !x.pin;}).sort(function(a,b){return timeVal(b)-timeVal(a);});
+    var all = pinned.concat(others);
+
+    var start = (state.page-1)*PAGE_SIZE;
+    var pageItems = all.slice(start, start+PAGE_SIZE);
+
+    pageItems.forEach(function(it){
+      var div=document.createElement('div'); div.className='item';
+      var head=document.createElement('div');
+      if(it.pin){ var pin=document.createElement('span'); pin.className='pin'; pin.textContent="\uD83D\uDCCC"; head.appendChild(pin); }
+      var txt=document.createElement('span'); txt.innerHTML = (it.text?linkify(String(it.text)):'');
+      head.appendChild(txt); div.appendChild(head);
+      if(it.time){ var t=document.createElement('div'); t.className='time'; t.textContent='('+relative(it.time)+')'; div.appendChild(t); }
+      list.appendChild(div);
+    });
+
+    var pager=document.getElementById('pager');
+    var info=document.getElementById('info'); var prev=document.getElementById('prev'); var next=document.getElementById('next');
+    var totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+    pager.hidden = totalPages<=1;
+    info.textContent = state.page + ' / ' + totalPages + 'ページ';
+    prev.disabled = state.page<=1; next.disabled = state.page>=totalPages;
+    prev.onclick = function(){ if(state.page>1){ state.page--; render(); window.scrollTo(0,0);} };
+    next.onclick = function(){ if(state.page<totalPages){ state.page++; render(); window.scrollTo(0,0);} };
+  }
+  fetchJSON().then(function(arr){ state.items = arr||[]; render(); }).catch(function(){ document.getElementById('list').textContent='読み込みに失敗しました。'; });
+})();
+</script>
